@@ -11,6 +11,7 @@
 
 namespace Predis\Async\Connection;
 
+use React\EventLoop\TimerInterface;
 use SplQueue;
 use Predis\Command\CommandInterface;
 use Predis\Connection\ParametersInterface;
@@ -166,19 +167,15 @@ abstract class AbstractConnection implements ConnectionInterface
      *
      * @param float    $timeout  Timeout value in seconds
      * @param callable $callback Callback invoked upon timeout.
+     *
+     * @return TimerInterface
      */
     protected function armTimeoutMonitor($timeout, callable $callback)
     {
-        $timer = $this->loop->addTimer($timeout, function ($timer) {
-            list($connection, $callback) = $timer->getData();
-
-            $connection->disconnect();
-            call_user_func($callback, $connection, new ConnectionException($connection, 'Connection timed out'));
+        return $this->loop->addTimer($timeout, function ($timer) use ($callback) {
+            $this->disconnect();
+            call_user_func($callback, $this, new ConnectionException($this, 'Connection timed out'));
         });
-
-        $timer->setData([$this, $callback]);
-
-        return $timer;
     }
 
     /**
@@ -187,7 +184,7 @@ abstract class AbstractConnection implements ConnectionInterface
     protected function disarmTimeoutMonitor()
     {
         if (isset($this->timeout)) {
-            $this->timeout->cancel();
+            $this->loop->cancelTimer($this->timeout);
             $this->timeout = null;
         }
     }
@@ -217,9 +214,10 @@ abstract class AbstractConnection implements ConnectionInterface
     {
         $this->disarmTimeoutMonitor();
 
-        $this->loop->nextTick(function () {
+        $this->loop->futureTick(function () {
             if (isset($this->stream)) {
-                $this->loop->removeStream($this->stream);
+                $this->loop->removeWriteStream($this->stream);
+                $this->loop->removeReadStream($this->stream);
                 $this->state->setState(State::DISCONNECTED);
                 $this->buffer->reset();
 
