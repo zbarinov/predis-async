@@ -219,7 +219,7 @@ abstract class AbstractConnection implements ConnectionInterface
 
         $this->loop->nextTick(function () {
             if (isset($this->stream)) {
-                $this->loop->removeStream($this->stream);
+                $this->loop->removeWriteStream($this->stream);
                 $this->state->setState(State::DISCONNECTED);
                 $this->buffer->reset();
 
